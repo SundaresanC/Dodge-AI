@@ -1,0 +1,120 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 20% 6%;
+    --foreground: 40 10% 90%;
+
+    --card: 220 18% 10%;
+    --card-foreground: 40 10% 90%;
+
+    --popover: 220 18% 10%;
+    --popover-foreground: 40 10% 90%;
+
+    --primary: 38 95% 60%;
+    --primary-foreground: 220 20% 6%;
+
+    --secondary: 150 10% 18%;
+    --secondary-foreground: 150 10% 70%;
+
+    --muted: 220 15% 14%;
+    --muted-foreground: 220 10% 50%;
+
+    --accent: 150 10% 40%;
+    --accent-foreground: 40 10% 90%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 40 10% 90%;
+
+    --border: 220 15% 16%;
+    --input: 220 15% 16%;
+    --ring: 38 95% 60%;
+
+    --radius: 0.625rem;
+
+    --sidebar-background: 220 20% 8%;
+    --sidebar-foreground: 220 10% 55%;
+    --sidebar-primary: 38 95% 60%;
+    --sidebar-primary-foreground: 220 20% 6%;
+    --sidebar-accent: 220 15% 14%;
+    --sidebar-accent-foreground: 40 10% 90%;
+    --sidebar-border: 220 15% 14%;
+    --sidebar-ring: 38 95% 60%;
+
+    /* Custom tokens */
+    --amber-glow: 38 95% 60%;
+    --sage: 150 10% 40%;
+    --surface: 220 18% 10%;
+    --surface-hover: 220 16% 14%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Instrument Sans', sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Instrument Sans', sans-serif;
+    font-weight: 600;
+  }
+
+  code, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Dot grid background */
+.dot-grid {
+  background-image:
+    radial-gradient(circle at 1px 1px, hsl(220 15% 18%) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+/* Ambient glow */
+.ambient-glow {
+  background:
+    radial-gradient(ellipse 600px 400px at 20% 20%, hsl(38 95% 60% / 0.04), transparent),
+    radial-gradient(ellipse 500px 500px at 80% 80%, hsl(150 10% 40% / 0.03), transparent);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(220 15% 20%);
+  border-radius: 3px;
+}
+
+/* Pulse animation for AI */
+@keyframes ai-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+.ai-pulse {
+  animation: ai-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, transparent 0%, hsl(38 95% 60% / 0.1) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}

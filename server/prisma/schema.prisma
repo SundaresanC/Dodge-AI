@@ -1,0 +1,135 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users & Auth ────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  avatarUrl    String?  @map("avatar_url")
+  timezone     String   @default("UTC")
+  preferences  Json     @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  sessions       Session[]
+  passwordResetTokens PasswordResetToken[]
+  aiModelConfigs AIModelConfig[]
+  queryHistory   QueryHistory[]
+  graphChatHistory GraphChatHistory[]
+
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  refreshToken String   @unique @map("refresh_token")
+  userAgent    String?  @map("user_agent")
+  ipAddress    String?  @map("ip_address")
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// ─── Password Reset Tokens ───────────────────────────────
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// ─── AI Model Configurations ─────────────────────────────
+
+enum AIProvider {
+  GEMINI
+  OPENAI
+  ANTHROPIC
+}
+
+enum AIPurpose {
+  NL_QUERY
+  DEFAULT
+}
+
+model AIModelConfig {
+  id              String     @id @default(cuid())
+  userId          String     @map("user_id")
+  provider        AIProvider
+  modelId         String     @map("model_id")
+  encryptedApiKey String?    @map("encrypted_api_key") @db.Text
+  displayName     String     @map("display_name")
+  isActive        Boolean    @default(false) @map("is_active")
+  purpose         AIPurpose  @default(DEFAULT)
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@index([userId, isActive])
+  @@map("ai_model_configs")
+}
+
+// ─── NL Query History ────────────────────────────────────
+
+model QueryHistory {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  nlQuery      String   @map("nl_query") @db.Text
+  generatedSql String   @map("generated_sql") @db.Text
+  resultSchema Json     @default("[]") @map("result_schema")
+  chartType    String   @default("table") @map("chart_type")
+  executionMs  Int      @default(0) @map("execution_ms")
+  rowCount     Int      @default(0) @map("row_count")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("query_history")
+}
+
+// ─── Graph Chat History ───────────────────────────────────
+
+model GraphChatHistory {
+  id               String   @id @default(cuid())
+  userId           String   @map("user_id")
+  sessionId        String   @map("session_id")
+  query            String   @db.Text
+  answer           String   @db.Text
+  intent           String   @default("AGGREGATE")
+  confidence       String   @default("medium")
+  highlightNodes   Json     @default("[]") @map("highlight_nodes")
+  entitiesInvolved Json     @default("[]") @map("entities_involved")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, sessionId])
+  @@map("graph_chat_history")
+}

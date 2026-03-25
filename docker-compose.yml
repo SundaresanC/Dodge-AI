@@ -1,0 +1,70 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL ────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: flowai
+      POSTGRES_PASSWORD: flowai_dev
+      POSTGRES_DB: flowai
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowai"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend API ───────────────────────────────────────────
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://flowai:flowai_dev@db:5432/flowai?schema=public
+      NODE_ENV: development
+      PORT: 3001
+      CORS_ORIGIN: http://localhost:8080
+      JWT_ACCESS_SECRET: dev-access-secret-min-32-chars!!
+      JWT_REFRESH_SECRET: dev-refresh-secret-min-32-chars!
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      # --- AI Keys (add your real keys below) ---
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: gemini-2.0-flash
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # --- SAP Data (mounted as volume below) ---
+      SAP_DATA_PATH: /app/sap-data
+      # --- Encryption (generate with: node -e "require('crypto').randomBytes(32).toString('hex')" | head -c 64) ---
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+    volumes:
+      - ../sap-order-to-cash-dataset/sap-o2c-data:/app/sap-data:ro
+    command: >
+      sh -c "npx prisma migrate deploy && npm run start"
+
+  # ── Frontend ──────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:3001/api
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:

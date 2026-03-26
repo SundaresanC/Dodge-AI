@@ -40,7 +40,7 @@ export async function listAIModels(req: Request, res: Response): Promise<void> {
     },
   });
 
-  const sanitised = configs.map(({ encryptedApiKey, ...c }: { encryptedApiKey: string | null; [key: string]: unknown }) => (
+  const sanitised = configs.map(({ encryptedApiKey, ...c }: { encryptedApiKey: string | null; [key: string]: unknown }) => ({
     ...c,
     hasCustomKey: Boolean(encryptedApiKey),
     keyPreview: encryptedApiKey ? KEY_MASKED : null,

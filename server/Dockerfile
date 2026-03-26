@@ -23,6 +23,7 @@ COPY --from=builder /app/dist ./dist
 
 # Prisma schema + migrations (prisma CLI came from npm ci above)
 COPY --from=builder /app/prisma ./prisma
+RUN npx prisma generate
 
 # Bundle the SAP dataset directly into the image (only 0.12MB compressed)
 COPY sap-data.zip /tmp/sap-data.zip

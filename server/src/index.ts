@@ -17,8 +17,10 @@ process.on("unhandledRejection", (reason) => {
   process.stderr.write(`[boot] UNHANDLED REJECTION: ${reason}\n`);
 });
 
-// ── Step 1: Run Prisma db push (sync, so we block until done) ──
+// ── Step 1: Generate Prisma client + push schema ──
 try {
+  process.stderr.write("[boot] Running prisma generate…\n");
+  execSync("npx prisma generate", { stdio: "inherit", cwd: process.cwd() });
   process.stderr.write("[boot] Running prisma db push…\n");
   execSync("npx prisma db push --accept-data-loss --skip-generate", {
     stdio: "inherit",
@@ -26,7 +28,7 @@ try {
   });
   process.stderr.write("[boot] Prisma sync complete\n");
 } catch (err) {
-  process.stderr.write(`[boot] Prisma db push failed: ${err}\n`);
+  process.stderr.write(`[boot] Prisma step failed: ${err}\n`);
   // Non-fatal: the database might already be in sync; continue starting
 }
 

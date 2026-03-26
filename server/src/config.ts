@@ -55,8 +55,7 @@ function loadEnv() {
     const formatted = parsed.error.issues
       .map((i) => `  ✗ ${i.path.join(".")}: ${i.message}`)
       .join("\n");
-    console.error("❌ Invalid environment variables:\n" + formatted);
-    process.exit(1);
+    throw new Error("Invalid environment variables:\n" + formatted);
   }
 
   return Object.freeze(parsed.data);

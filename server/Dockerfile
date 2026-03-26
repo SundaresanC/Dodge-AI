@@ -13,16 +13,16 @@ WORKDIR /app
 # Install OpenSSL (Prisma) and unzip (dataset)
 RUN apt-get update -y && apt-get install -y openssl unzip && rm -rf /var/lib/apt/lists/*
 
-# Copy node_modules from builder (includes DuckDB pre-built binaries)
-COPY --from=builder /app/node_modules ./node_modules
+# Copy package files and reinstall production deps fresh in this environment
+# This ensures DuckDB downloads the correct pre-built binary for node:22 (not the builder's slim env)
+COPY package*.json ./
+RUN npm ci --omit=dev
 
 # Compiled application
 COPY --from=builder /app/dist ./dist
 
-# Prisma schema + migrations
+# Prisma schema + migrations (prisma CLI came from npm ci above)
 COPY --from=builder /app/prisma ./prisma
-
-COPY package*.json ./
 
 # Bundle the SAP dataset directly into the image (only 0.12MB compressed)
 COPY sap-data.zip /tmp/sap-data.zip

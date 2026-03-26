@@ -3,24 +3,27 @@ WORKDIR /app
 # Install OpenSSL for Prisma
 RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
+# Install ALL deps (including DuckDB linux binary) in the builder
 RUN npm ci
 COPY . .
 RUN npm run build
+# Prune devDependencies so we can copy a lean node_modules to runner
+RUN npm prune --omit=dev
 
-FROM node:22 AS runner
+FROM node:22-slim AS runner
 WORKDIR /app
 
 # Install OpenSSL (Prisma) and unzip (dataset)
 RUN apt-get update -y && apt-get install -y openssl unzip && rm -rf /var/lib/apt/lists/*
 
-# Copy package files and reinstall production deps fresh in this environment
-COPY package*.json ./
-RUN npm ci --omit=dev && npm ls @duckdb/node-bindings-linux-x64 || npm install --no-save @duckdb/node-bindings-linux-x64
+# Copy production node_modules directly from builder (already pruned)
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package*.json ./
 
 # Compiled application
 COPY --from=builder /app/dist ./dist
 
-# Prisma schema + migrations (prisma CLI came from npm ci above)
+# Prisma schema (generate client in this environment for correct binary target)
 COPY --from=builder /app/prisma ./prisma
 RUN npx prisma generate
 
@@ -33,5 +36,4 @@ RUN mkdir -p /app/sap-dataset && unzip /tmp/sap-data.zip -d /app/sap-dataset && 
 RUN ls -la /app/sap-dataset/sap-o2c-data/ | head -20
 
 EXPOSE 3001
-# index.js handles prisma db push internally — no shell chain needed
 CMD ["node", "dist/index.js"]

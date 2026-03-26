@@ -21,9 +21,14 @@ const app = express();
 app.use(helmet());
 
 // CORS
+const allowedOrigins = env.CORS_ORIGIN.split(",").map((s) => s.trim());
+// Always allow the production Vercel frontend
+if (!allowedOrigins.includes("https://dodge-ai-kohl.vercel.app")) {
+  allowedOrigins.push("https://dodge-ai-kohl.vercel.app");
+}
 app.use(
   cors({
-    origin: env.CORS_ORIGIN.split(",").map((s) => s.trim()),
+    origin: allowedOrigins,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],

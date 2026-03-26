@@ -42,10 +42,29 @@ async function getConnection(): Promise<DuckDBConnection> {
   return _connection;
 }
 
+function resolveSapDataRoot(): string {
+  const envPath = process.env.SAP_DATA_PATH ?? "";
+  // Try the explicit env var first
+  if (envPath && fs.existsSync(envPath)) return path.resolve(envPath);
+  // Fallback: auto-detect common Docker locations
+  const candidates = [
+    "/app/sap-dataset/sap-o2c-data",
+    "/app/data/sap-o2c-data",
+    path.resolve(envPath),
+  ];
+  for (const c of candidates) {
+    if (c && fs.existsSync(c)) {
+      console.log(`ℹ️  DuckDB worker: auto-detected SAP data at ${c}`);
+      return c;
+    }
+  }
+  return path.resolve(envPath); // return original for the warning message
+}
+
 async function registerSapViews(conn: DuckDBConnection): Promise<void> {
-  const dataRoot = path.resolve(process.env.SAP_DATA_PATH ?? "");
+  const dataRoot = resolveSapDataRoot();
   if (!fs.existsSync(dataRoot)) {
-    console.warn(`⚠️  DuckDB worker: SAP_DATA_PATH not found: ${dataRoot}`);
+    console.warn(`⚠️  DuckDB worker: SAP data not found at any location (SAP_DATA_PATH=${process.env.SAP_DATA_PATH})`);
     return;
   }
 

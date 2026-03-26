@@ -8,6 +8,11 @@ import type {
   UpdateModelConfigInput,
   ActivateModelInput,
 } from "../validators/settings.schema.js";
+import { aiPurposeEnum, aiProviderEnum } from "../validators/settings.schema.js";
+import type { z } from "zod";
+
+type AIProvider = z.infer<typeof aiProviderEnum>;
+type AIPurpose = z.infer<typeof aiPurposeEnum>;
 
 // Mask used when returning the key status to the client — never expose the real value
 const KEY_MASKED = "••••••••";

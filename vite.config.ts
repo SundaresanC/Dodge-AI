@@ -17,4 +17,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    minify: "esbuild",
+  },
+  optimizeDeps: {
+    disabled: true,
+  },
 });

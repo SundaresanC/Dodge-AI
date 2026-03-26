@@ -3,7 +3,7 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "installCommand": "npm ci --legacy-peer-deps",
+  "installCommand": "npm ci --legacy-peer-deps --include=dev",
   "rewrites": [
     {
       "source": "/((?!api/.*).*)",

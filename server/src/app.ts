@@ -78,13 +78,13 @@ app.use(errorHandler);
 
 // ── Start Server ─────────────────────────────────────────
 
-app.listen(env.PORT, () => {
+app.listen(env.PORT, "0.0.0.0", () => {
   console.log(`
   ┌─────────────────────────────────────────┐
   │                                         │
   │   SAP O2C Explorer — API Server         │
   │                                         │
-  │   → Local:   http://localhost:${env.PORT}     │
+  │   → Host:   0.0.0.0:${String(env.PORT).padEnd(18)}│
   │   → Mode:    ${env.NODE_ENV.padEnd(24)}│
   │                                         │
   └─────────────────────────────────────────┘

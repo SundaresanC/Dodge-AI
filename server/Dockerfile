@@ -14,9 +14,8 @@ WORKDIR /app
 RUN apt-get update -y && apt-get install -y openssl unzip && rm -rf /var/lib/apt/lists/*
 
 # Copy package files and reinstall production deps fresh in this environment
-# This ensures DuckDB downloads the correct pre-built binary for node:22 (not the builder's slim env)
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev && npm ls @duckdb/node-bindings-linux-x64 || npm install --no-save @duckdb/node-bindings-linux-x64
 
 # Compiled application
 COPY --from=builder /app/dist ./dist

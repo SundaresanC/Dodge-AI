@@ -1,9 +1,9 @@
 /**
- * DuckDB worker thread.
- * Runs in a separate thread so any native binary crash (SIGABRT/SIGSEGV)
- * kills only this worker — the main Express process stays alive.
+ * DuckDB child process.
+ * Spawned via child_process.fork() so any native crash (SIGABRT/SIGSEGV)
+ * only kills this child process — the main Express process stays alive.
+ * Communication happens via IPC (process.send / process.on('message')).
  */
-import { parentPort, workerData } from "worker_threads";
 import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
 import path from "path";
 import fs from "fs";
@@ -43,7 +43,7 @@ async function getConnection(): Promise<DuckDBConnection> {
 }
 
 async function registerSapViews(conn: DuckDBConnection): Promise<void> {
-  const dataRoot = path.resolve(workerData.sapDataPath as string);
+  const dataRoot = path.resolve(process.env.SAP_DATA_PATH ?? "");
   if (!fs.existsSync(dataRoot)) {
     console.warn(`⚠️  DuckDB worker: SAP_DATA_PATH not found: ${dataRoot}`);
     return;
@@ -74,9 +74,9 @@ async function registerSapViews(conn: DuckDBConnection): Promise<void> {
   console.log(`✅ DuckDB worker: ${_registeredViews.length} SAP views ready`);
 }
 
-if (!parentPort) throw new Error("Must run as a worker thread");
+if (!process.send) throw new Error("Must be spawned with an IPC channel (child_process.fork)");
 
-parentPort.on("message", async (msg: WorkerMessage) => {
+process.on("message", async (msg: WorkerMessage) => {
   const reply: WorkerResponse = { id: msg.id, ok: false };
   try {
     if (msg.type === "init") {
@@ -109,5 +109,5 @@ parentPort.on("message", async (msg: WorkerMessage) => {
     reply.ok = false;
     reply.error = err instanceof Error ? err.message : String(err);
   }
-  parentPort!.postMessage(reply);
+  process.send!(reply);
 });

@@ -1,9 +1,9 @@
 /**
- * DuckDB proxy — all DuckDB operations run inside a worker thread so that
- * any native binary crash (SIGABRT / SIGSEGV) only kills the worker and
+ * DuckDB proxy — all DuckDB operations run inside a forked child process so
+ * that any native binary crash (SIGABRT / SIGSEGV) only kills the child and
  * leaves the main Express process alive.
  */
-import { Worker } from "worker_threads";
+import { fork, type ChildProcess } from "child_process";
 import { fileURLToPath } from "url";
 import path from "path";
 import { env } from "../config.js";
@@ -17,69 +17,76 @@ export interface DuckDBResult {
   rowCount: number;
 }
 
-// ── Worker lifecycle ──────────────────────────────────────
+// ── Child process lifecycle ────────────────────────────────
 
-let _worker: Worker | null = null;
+let _child: ChildProcess | null = null;
 let _available = false;
 let _viewNames: string[] = [];
 let _msgId = 0;
 const _pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 
-function getWorker(): Worker | null {
-  if (_worker) return _worker;
-  if (!_available && _worker === null) {
-    try {
-      const workerPath = path.join(__dirname, "duckdb-worker.js");
-      _worker = new Worker(workerPath, { workerData: { sapDataPath: env.SAP_DATA_PATH } });
+function rejectAll(reason: string): void {
+  for (const p of _pending.values()) p.reject(new Error(reason));
+  _pending.clear();
+}
 
-      _worker.on("message", (msg: { id: number; ok: boolean; data?: unknown; error?: string }) => {
-        const pending = _pending.get(msg.id);
-        if (!pending) return;
-        _pending.delete(msg.id);
-        if (msg.ok) pending.resolve(msg.data);
-        else pending.reject(new Error(msg.error ?? "DuckDB worker error"));
-      });
+function getChild(): ChildProcess | null {
+  if (_child) return _child;
+  try {
+    const childPath = path.join(__dirname, "duckdb-worker.js");
+    _child = fork(childPath, [], {
+      env: { ...process.env, SAP_DATA_PATH: env.SAP_DATA_PATH },
+      stdio: ["pipe", "pipe", "pipe", "ipc"],
+    });
 
-      _worker.on("error", (err) => {
-        console.warn("⚠️  DuckDB worker error — AI queries unavailable:", err.message);
+    _child.stdout?.on("data", (d: Buffer) => process.stdout.write(d));
+    _child.stderr?.on("data", (d: Buffer) => process.stderr.write(d));
+
+    _child.on("message", (msg: { id: number; ok: boolean; data?: unknown; error?: string }) => {
+      const pending = _pending.get(msg.id);
+      if (!pending) return;
+      _pending.delete(msg.id);
+      if (msg.ok) pending.resolve(msg.data);
+      else pending.reject(new Error(msg.error ?? "DuckDB child error"));
+    });
+
+    _child.on("error", (err) => {
+      console.warn("⚠️  DuckDB child error — AI queries unavailable:", err.message);
+      _available = false;
+      _child = null;
+      rejectAll("DuckDB child process error");
+    });
+
+    _child.on("exit", (code, signal) => {
+      if (code !== 0 || signal) {
+        console.warn(`⚠️  DuckDB child exited (code=${code} signal=${signal}) — AI queries unavailable`);
         _available = false;
-        _worker = null;
-        for (const p of _pending.values()) p.reject(new Error("DuckDB worker crashed"));
-        _pending.clear();
-      });
+        _child = null;
+        rejectAll("DuckDB child process exited");
+      }
+    });
 
-      _worker.on("exit", (code) => {
-        if (code !== 0) {
-          console.warn(`⚠️  DuckDB worker exited (code ${code}) — AI queries unavailable`);
-          _available = false;
-          _worker = null;
-          for (const p of _pending.values()) p.reject(new Error("DuckDB worker exited"));
-          _pending.clear();
-        }
-      });
-
-    } catch (err) {
-      console.warn("⚠️  Could not start DuckDB worker:", err);
-      return null;
-    }
+  } catch (err) {
+    console.warn("⚠️  Could not fork DuckDB child:", err);
+    return null;
   }
-  return _worker;
+  return _child;
 }
 
 function send(type: string, sql?: string): Promise<unknown> {
-  const worker = getWorker();
-  if (!worker) return Promise.reject(new Error("DuckDB unavailable"));
+  const child = getChild();
+  if (!child) return Promise.reject(new Error("DuckDB unavailable"));
   const id = ++_msgId;
   return new Promise((resolve, reject) => {
     _pending.set(id, { resolve, reject });
-    worker.postMessage({ id, type, sql });
+    child.send({ id, type, sql });
   });
 }
 
 // ── Public API ────────────────────────────────────────────
 
 /**
- * Initialises the DuckDB worker (pre-warm). Non-fatal if DuckDB is unavailable.
+ * Initialises the DuckDB child process (pre-warm). Non-fatal if DuckDB is unavailable.
  */
 export async function getDuckDBConnection(): Promise<void> {
   try {
@@ -99,54 +106,7 @@ export function getSapViewNames(): string[] {
 }
 
 /**
- * Resolves SAP data folder from config, then registers one VIEW per entity.
- * Uses glob-style paths so multi-part JSONL entities are automatically merged.
- */
-async function registerSapViews(conn: DuckDBConnection): Promise<void> {
-  const dataRoot = path.resolve(env.SAP_DATA_PATH);
-
-  if (!fs.existsSync(dataRoot)) {
-    console.warn(
-      `⚠️  SAP_DATA_PATH not found: ${dataRoot}. NL query will be unavailable.`
-    );
-    return;
-  }
-
-  const entities = fs
-    .readdirSync(dataRoot, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => d.name);
-
-  for (const entity of entities) {
-    const entityDir = path.join(dataRoot, entity);
-    const jsonlFiles = fs
-      .readdirSync(entityDir)
-      .filter((f) => f.endsWith(".jsonl"));
-
-    if (jsonlFiles.length === 0) continue;
-
-    // DuckDB accepts glob patterns – use a stable wildcard so new files are
-    // automatically picked up without a server restart.
-    //
-    // On Windows, paths must use forward slashes inside DuckDB SQL strings.
-    const globPath = path.join(entityDir, "*.jsonl").replace(/\\/g, "/");
-
-    const viewSql = `
-      CREATE OR REPLACE VIEW ${entity} AS
-        SELECT * FROM read_json_auto('${globPath}', format='newline_delimited', ignore_errors=true)
-    `;
-
-    try {
-      await conn.run(viewSql);
-      _registeredViews.push(entity);
-    } catch (err) {
-      console.warn(`⚠️  Could not register DuckDB view for '${entity}':`, err);
-    }
-  }
-}
-
-/**
- * Executes a read-only SQL query via the DuckDB worker.
+ * Executes a read-only SQL query via the DuckDB child process.
  */
 export async function duckdbQuery(sql: string): Promise<DuckDBResult> {
   if (!_available) throw new Error("DuckDB is not available on this deployment");

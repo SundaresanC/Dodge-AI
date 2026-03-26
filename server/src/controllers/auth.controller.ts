@@ -40,7 +40,7 @@ function cleanupExpiredSessions(userId: string) {
       userId,
       expiresAt: { lt: new Date() },
     },
-  }).catch((err) => console.error("Session cleanup failed:", err));
+  }).catch((err: unknown) => console.error("Session cleanup failed:", err));
 }
 
 export async function signup(req: Request, res: Response): Promise<void> {

@@ -8,7 +8,6 @@ import type {
   UpdateModelConfigInput,
   ActivateModelInput,
 } from "../validators/settings.schema.js";
-import type { AIProvider, AIPurpose } from "@prisma/client";
 
 // Mask used when returning the key status to the client — never expose the real value
 const KEY_MASKED = "••••••••";
@@ -41,7 +40,7 @@ export async function listAIModels(req: Request, res: Response): Promise<void> {
     },
   });
 
-  const sanitised = configs.map(({ encryptedApiKey, ...c }) => ({
+  const sanitised = configs.map(({ encryptedApiKey, ...c }: { encryptedApiKey: string | null; [key: string]: unknown }) => (
     ...c,
     hasCustomKey: Boolean(encryptedApiKey),
     keyPreview: encryptedApiKey ? KEY_MASKED : null,

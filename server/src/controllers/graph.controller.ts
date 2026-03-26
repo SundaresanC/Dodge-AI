@@ -213,7 +213,7 @@ export async function getSessionsList(req: Request, res: Response): Promise<void
     });
 
     // Fetch the first query of each session for a preview label
-    const sessionIds = sessions.map((s) => s.sessionId);
+    const sessionIds = sessions.map((s: { sessionId: string }) => s.sessionId);
     const firstMessages = sessionIds.length > 0
       ? await prisma.graphChatHistory.findMany({
           where: { userId, sessionId: { in: sessionIds } },
@@ -223,9 +223,9 @@ export async function getSessionsList(req: Request, res: Response): Promise<void
         })
       : [];
 
-    const previewMap = new Map(firstMessages.map((m) => [m.sessionId, m.query]));
+    const previewMap = new Map(firstMessages.map((m: { sessionId: string; query: string }) => [m.sessionId, m.query]));
 
-    const result = sessions.map((s) => ({
+    const result = sessions.map((s: { sessionId: string; _count: { id: number }; _max: { createdAt: Date | null }; _min: { createdAt: Date | null } }) => ({
       sessionId: s.sessionId,
       messageCount: s._count.id,
       firstQuery: previewMap.get(s.sessionId) ?? "",

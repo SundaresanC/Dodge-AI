@@ -21,11 +21,4 @@
       ]
     }
   ],
-  "env": {
-    "VITE_API_URL": {
-      "description": "URL of the backend API (Railway deployment URL + /api)",
-      "required": true,
-      "value": "@VITE_API_URL"
-    }
-  }
 }

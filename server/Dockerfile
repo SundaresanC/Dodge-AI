@@ -7,15 +7,14 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM node:22-slim AS runner
+FROM node:22 AS runner
 WORKDIR /app
 
-# Install OpenSSL (Prisma), unzip (dataset), python3+build tools (DuckDB native rebuild)
-RUN apt-get update -y && apt-get install -y openssl unzip python3 make g++ && rm -rf /var/lib/apt/lists/*
+# Install OpenSSL (Prisma) and unzip (dataset)
+RUN apt-get update -y && apt-get install -y openssl unzip && rm -rf /var/lib/apt/lists/*
 
-# Copy node_modules then rebuild native addons (DuckDB) for this runtime environment
+# Copy node_modules from builder (includes DuckDB pre-built binaries)
 COPY --from=builder /app/node_modules ./node_modules
-RUN npm rebuild @duckdb/node-api --ignore-scripts=false 2>/dev/null || true
 
 # Compiled application
 COPY --from=builder /app/dist ./dist

@@ -1,31 +1,44 @@
 /**
- * Bootstrap entry point — installs crash handlers BEFORE any application
- * code is imported so we can see errors that kill the process in Docker.
- *
- * ES modules hoist static `import` declarations above all other code,
- * so a regular import can't be preceded by crash-handler setup.
- * Here we use dynamic `import()` which executes sequentially.
+ * Single entry point — runs Prisma db push, then starts the Express server.
+ * Everything in one Node process so there's no way for a shell `&&` chain to
+ * silently swallow a crash.
  */
-console.log("🚀 bootstrap: starting…");
+import { execSync } from "child_process";
+
+process.stderr.write("[boot] index.js starting\n");
 
 process.on("uncaughtException", (err) => {
-  console.error("💀 UNCAUGHT EXCEPTION:", err);
+  process.stderr.write(`[boot] UNCAUGHT EXCEPTION: ${err?.stack ?? err}\n`);
   process.exitCode = 1;
   setTimeout(() => process.exit(1), 500);
 });
 
 process.on("unhandledRejection", (reason) => {
-  console.error("💀 UNHANDLED REJECTION:", reason);
+  process.stderr.write(`[boot] UNHANDLED REJECTION: ${reason}\n`);
 });
 
-console.log("🚀 bootstrap: crash handlers installed, loading app…");
+// ── Step 1: Run Prisma db push (sync, so we block until done) ──
+try {
+  process.stderr.write("[boot] Running prisma db push…\n");
+  execSync("npx prisma db push --accept-data-loss --skip-generate", {
+    stdio: "inherit",
+    cwd: process.cwd(),
+  });
+  process.stderr.write("[boot] Prisma sync complete\n");
+} catch (err) {
+  process.stderr.write(`[boot] Prisma db push failed: ${err}\n`);
+  // Non-fatal: the database might already be in sync; continue starting
+}
+
+// ── Step 2: Load and start Express app ──
+process.stderr.write("[boot] Loading app module…\n");
 import("./app.js")
   .then((mod) => {
-    console.log("✅ bootstrap: app module loaded");
+    process.stderr.write("[boot] App module loaded successfully\n");
     return mod.default;
   })
   .catch((err) => {
-    console.error("💀 bootstrap: failed to load app:", err);
+    process.stderr.write(`[boot] FATAL — failed to load app: ${err?.stack ?? err}\n`);
     process.exitCode = 1;
     setTimeout(() => process.exit(1), 500);
   });

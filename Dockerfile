@@ -1,7 +1,7 @@
 FROM node:22-slim AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm cache clean --force && npm install --build-from-source
 COPY . .
 RUN npm run build
 

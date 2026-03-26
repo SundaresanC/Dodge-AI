@@ -1,38 +1,101 @@
-import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
-import { env } from "../config.js";
-import { registerCleanedViews } from "./dataNormalization.js";
+/**
+ * DuckDB proxy — all DuckDB operations run inside a worker thread so that
+ * any native binary crash (SIGABRT / SIGSEGV) only kills the worker and
+ * leaves the main Express process alive.
+ */
+import { Worker } from "worker_threads";
+import { fileURLToPath } from "url";
 import path from "path";
-import fs from "fs";
+import { env } from "../config.js";
 
-interface DuckDBResult {
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export interface DuckDBResult {
   columns: string[];
   rows: Record<string, unknown>[];
   rowCount: number;
 }
 
-let _connection: DuckDBConnection | null = null;
-const _registeredViews: string[] = [];
+// ── Worker lifecycle ──────────────────────────────────────
+
+let _worker: Worker | null = null;
+let _available = false;
+let _viewNames: string[] = [];
+let _msgId = 0;
+const _pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+
+function getWorker(): Worker | null {
+  if (_worker) return _worker;
+  if (!_available && _worker === null) {
+    try {
+      const workerPath = path.join(__dirname, "duckdb-worker.js");
+      _worker = new Worker(workerPath, { workerData: { sapDataPath: env.SAP_DATA_PATH } });
+
+      _worker.on("message", (msg: { id: number; ok: boolean; data?: unknown; error?: string }) => {
+        const pending = _pending.get(msg.id);
+        if (!pending) return;
+        _pending.delete(msg.id);
+        if (msg.ok) pending.resolve(msg.data);
+        else pending.reject(new Error(msg.error ?? "DuckDB worker error"));
+      });
+
+      _worker.on("error", (err) => {
+        console.warn("⚠️  DuckDB worker error — AI queries unavailable:", err.message);
+        _available = false;
+        _worker = null;
+        for (const p of _pending.values()) p.reject(new Error("DuckDB worker crashed"));
+        _pending.clear();
+      });
+
+      _worker.on("exit", (code) => {
+        if (code !== 0) {
+          console.warn(`⚠️  DuckDB worker exited (code ${code}) — AI queries unavailable`);
+          _available = false;
+          _worker = null;
+          for (const p of _pending.values()) p.reject(new Error("DuckDB worker exited"));
+          _pending.clear();
+        }
+      });
+
+    } catch (err) {
+      console.warn("⚠️  Could not start DuckDB worker:", err);
+      return null;
+    }
+  }
+  return _worker;
+}
+
+function send(type: string, sql?: string): Promise<unknown> {
+  const worker = getWorker();
+  if (!worker) return Promise.reject(new Error("DuckDB unavailable"));
+  const id = ++_msgId;
+  return new Promise((resolve, reject) => {
+    _pending.set(id, { resolve, reject });
+    worker.postMessage({ id, type, sql });
+  });
+}
+
+// ── Public API ────────────────────────────────────────────
 
 /**
- * Returns (and lazily creates) the single DuckDB in-memory connection.
- * Views over SAP JSONL files are registered on first init.
+ * Initialises the DuckDB worker (pre-warm). Non-fatal if DuckDB is unavailable.
  */
-export async function getDuckDBConnection(): Promise<DuckDBConnection> {
-  if (_connection) return _connection;
-
-  const instance = await DuckDBInstance.create(":memory:");
-  _connection = await instance.connect();
-
-  await registerSapViews(_connection);
-  await registerCleanedViews(_connection);
-  console.log("✅ DuckDB initialised — SAP O2C views and normalization layer ready");
-
-  return _connection;
+export async function getDuckDBConnection(): Promise<void> {
+  try {
+    const views = (await send("init")) as string[];
+    _viewNames = views;
+    _available = true;
+    console.log("✅ DuckDB initialised — SAP O2C views and normalization layer ready");
+  } catch (err) {
+    console.warn("⚠️  DuckDB init failed (non-fatal — AI queries will be unavailable):", err);
+    _available = false;
+  }
 }
 
 /** Returns the list of SAP entity views registered at startup. */
 export function getSapViewNames(): string[] {
-  return [..._registeredViews];
+  return [..._viewNames];
 }
 
 /**
@@ -83,59 +146,18 @@ async function registerSapViews(conn: DuckDBConnection): Promise<void> {
 }
 
 /**
- * Executes a read-only SQL query against the DuckDB in-memory database.
- * Returns columns and serialisable rows (BigInt values are converted to strings).
+ * Executes a read-only SQL query via the DuckDB worker.
  */
 export async function duckdbQuery(sql: string): Promise<DuckDBResult> {
-  const conn = await getDuckDBConnection();
-
-  const result = await conn.runAndReadAll(sql);
-  const rawRows = result.getRowObjects() as Record<string, unknown>[];
-
-  const rows = rawRows.map(serializeRow);
-
-  const columns =
-    rawRows.length > 0
-      ? Object.keys(rawRows[0])
-      : Array.from({ length: result.columnCount }, (_, i) =>
-          result.columnName(i)
-        );
-
-  return { columns, rows, rowCount: rows.length };
+  if (!_available) throw new Error("DuckDB is not available on this deployment");
+  return send("query", sql) as Promise<DuckDBResult>;
 }
 
 /**
- * Returns the list of registered SAP view names (= the entity folder names).
+ * Returns the list of SAP view names from the worker.
  */
 export async function listSapViews(): Promise<string[]> {
-  const conn = await getDuckDBConnection();
-  const result = await conn.runAndReadAll(
-    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' ORDER BY table_name"
-  );
-  return (result.getRowObjects() as { table_name: string }[]).map(
-    (r) => r.table_name
-  );
+  if (!_available) return [];
+  return send("listViews") as Promise<string[]>;
 }
 
-// ─── Helpers ─────────────────────────────────────────────
-
-function serializeRow(row: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(row).map(([k, v]) => [k, serializeValue(v)])
-  );
-}
-
-function serializeValue(v: unknown): unknown {
-  if (typeof v === "bigint") return v.toString();
-  if (v instanceof Date) return v.toISOString();
-  if (Array.isArray(v)) return v.map(serializeValue);
-  if (v !== null && typeof v === "object") {
-    return Object.fromEntries(
-      Object.entries(v as Record<string, unknown>).map(([k, val]) => [
-        k,
-        serializeValue(val),
-      ])
-    );
-  }
-  return v;
-}

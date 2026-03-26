@@ -30,4 +30,4 @@ RUN mkdir -p /app/data && unzip /tmp/sap-data.zip -d /app/data && rm /tmp/sap-da
 
 EXPOSE 3001
 # Use db push (idempotent) instead of migrate deploy to avoid P3009 on partial deploys
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss --skip-generate && echo 'Starting node...' && node dist/index.js; echo Node exited with code $?"]
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss --skip-generate && node dist/index.js"]

@@ -32,7 +32,33 @@ try {
   // Non-fatal: the database might already be in sync; continue starting
 }
 
-// ── Step 2: Load and start Express app ──
+// ── Step 2: Verify SAP data directory ──
+{
+  const sapPath = process.env.SAP_DATA_PATH ?? "(not set)";
+  process.stderr.write(`[boot] SAP_DATA_PATH = ${sapPath}\n`);
+  try {
+    const { readdirSync, existsSync } = await import("fs");
+    if (existsSync(sapPath)) {
+      const entries = readdirSync(sapPath);
+      process.stderr.write(`[boot] SAP data directory has ${entries.length} entries: ${entries.slice(0, 10).join(", ")}\n`);
+    } else {
+      process.stderr.write(`[boot] ⚠️  SAP data directory does NOT exist — checking /app/:\n`);
+      if (existsSync("/app")) {
+        process.stderr.write(`[boot]   /app contents: ${readdirSync("/app").join(", ")}\n`);
+      }
+      if (existsSync("/app/sap-dataset")) {
+        process.stderr.write(`[boot]   /app/sap-dataset contents: ${readdirSync("/app/sap-dataset").join(", ")}\n`);
+      }
+      if (existsSync("/app/data")) {
+        process.stderr.write(`[boot]   /app/data contents: ${readdirSync("/app/data").join(", ")}\n`);
+      }
+    }
+  } catch (e) {
+    process.stderr.write(`[boot] Could not inspect SAP path: ${e}\n`);
+  }
+}
+
+// ── Step 3: Load and start Express app ──
 process.stderr.write("[boot] Loading app module…\n");
 import("./app.js")
   .then((mod) => {

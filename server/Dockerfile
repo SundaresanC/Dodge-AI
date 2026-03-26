@@ -25,8 +25,12 @@ COPY --from=builder /app/prisma ./prisma
 RUN npx prisma generate
 
 # Bundle the SAP dataset directly into the image (only 0.12MB compressed)
+# Uses /app/sap-dataset (NOT /app/data) to avoid Railway volume mounts shadowing it
 COPY sap-data.zip /tmp/sap-data.zip
-RUN mkdir -p /app/data && unzip /tmp/sap-data.zip -d /app/data && rm /tmp/sap-data.zip
+RUN mkdir -p /app/sap-dataset && unzip /tmp/sap-data.zip -d /app/sap-dataset && rm /tmp/sap-data.zip
+
+# Verify the data is in place
+RUN ls -la /app/sap-dataset/sap-o2c-data/ | head -20
 
 EXPOSE 3001
 # index.js handles prisma db push internally — no shell chain needed

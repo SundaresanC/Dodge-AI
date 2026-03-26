@@ -10,11 +10,12 @@ RUN npm run build
 FROM node:22-slim AS runner
 WORKDIR /app
 
-# Install OpenSSL required by Prisma at runtime + unzip for dataset
-RUN apt-get update -y && apt-get install -y openssl unzip && rm -rf /var/lib/apt/lists/*
+# Install OpenSSL (Prisma), unzip (dataset), python3+build tools (DuckDB native rebuild)
+RUN apt-get update -y && apt-get install -y openssl unzip python3 make g++ && rm -rf /var/lib/apt/lists/*
 
-# Copy the full node_modules from builder — keeps prisma CLI and DuckDB native binaries intact
+# Copy node_modules then rebuild native addons (DuckDB) for this runtime environment
 COPY --from=builder /app/node_modules ./node_modules
+RUN npm rebuild @duckdb/node-api --ignore-scripts=false 2>/dev/null || true
 
 # Compiled application
 COPY --from=builder /app/dist ./dist
